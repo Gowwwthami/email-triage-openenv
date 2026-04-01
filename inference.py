@@ -489,8 +489,10 @@ def main() -> None:
         all_metrics[task_id] = run_task(task_id=task_id, client=client, model_name=model_name)
 
     print("\n=== Final Summary ===")
-    for task_id in task_ids:
-        print_summary(task_labels[task_id], all_metrics[task_id])
+
+    print_summary("Task 1 (Easy)", all_metrics["task_easy"])
+    print_summary("Task 2 (Medium)", all_metrics["task_medium"])
+    print_summary("Task 3 (Hard)", all_metrics["task_hard"])
 
     for task_id in task_ids:
         label = task_labels[task_id]
