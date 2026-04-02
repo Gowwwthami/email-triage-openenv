@@ -18,6 +18,13 @@ class EmailTriageEnv:
         self.cumulative_reward = 0.0
         self.last_reward = 0.0
         self.done = False
+        
+        # Enhanced state tracking
+        self.emails_processed = 0
+        self.replies_sent = 0
+        self.escalations = 0
+        self.archived = 0
+        self.urgent_handled = 0
 
     def reset(self) -> Observation:
         self.grader = DeterministicTriageGrader(self.task)
@@ -25,6 +32,14 @@ class EmailTriageEnv:
         self.cumulative_reward = 0.0
         self.last_reward = 0.0
         self.done = False
+        
+        # Reset enhanced tracking
+        self.emails_processed = 0
+        self.replies_sent = 0
+        self.escalations = 0
+        self.archived = 0
+        self.urgent_handled = 0
+        
         return self._observation_for_index(self.index)
 
     def state(self) -> State:
@@ -48,6 +63,18 @@ class EmailTriageEnv:
         reward_obj = compute_step_reward(action=action, truth=current_email, task=self.task)
         self.grader.update(action=action, truth=current_email)
 
+        # Update tracking statistics
+        self.emails_processed += 1
+        if action.action and action.action.value == "reply":
+            self.replies_sent += 1
+        elif action.action and action.action.value == "escalate":
+            self.escalations += 1
+        elif action.action and action.action.value == "archive":
+            self.archived += 1
+        
+        if action.priority and action.priority.value == "urgent":
+            self.urgent_handled += 1
+
         self.last_reward = reward_obj.total
         self.cumulative_reward += reward_obj.total
 
@@ -68,6 +95,14 @@ class EmailTriageEnv:
             "reward_breakdown": reward_obj.model_dump(),
             "running_score": self.grader.score(),
             "state": self.state().model_dump(),
+            "stats": {
+                "emails_processed": self.emails_processed,
+                "emails_remaining": len(self.dataset) - self.emails_processed,
+                "replies_sent": self.replies_sent,
+                "escalations": self.escalations,
+                "archived": self.archived,
+                "urgent_handled": self.urgent_handled,
+            },
         }
         return next_observation, reward_obj.total, self.done, info
 
