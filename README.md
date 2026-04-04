@@ -31,10 +31,15 @@ The environment provides step-wise rewards based on:
 ```text
 email-triage-env/
 ├── inference.py
+├── pyproject.toml
+├── uv.lock
 ├── openenv.yaml
 ├── Dockerfile
 ├── README.md
 ├── requirements.txt
+├── server/
+│   ├── __init__.py
+│   ├── app.py
 ├── src/
 │   ├── env.py
 │   ├── models.py
@@ -178,11 +183,35 @@ python inference.py
 
 If `API_BASE_URL` is not set, inference uses deterministic local heuristics.
 
+### Run the API Server (app.py)
+
+The OpenEnv validator and Hugging Face Space health checks require a live server that responds to `POST /reset`.
+
+From repo root:
+
+```bash
+python -m server.app
+```
+
+Alternative command from the `server/` directory:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port 7860
+```
+
+Quick endpoint checks:
+
+```bash
+curl -X POST http://127.0.0.1:7860/reset -H "Content-Type: application/json" -d '{}'
+curl http://127.0.0.1:7860/state
+```
+
 ### Docker
 
 ```bash
 docker build -t email-triage-env .
 docker run --rm \
+  -p 7860:7860 \
   -e API_BASE_URL="https://your-openai-compatible-endpoint/v1" \
   -e MODEL_NAME="gpt-4o-mini" \
   -e HF_TOKEN="your_token" \
@@ -192,22 +221,47 @@ docker run --rm \
 It also runs without external endpoint:
 
 ```bash
-docker run --rm email-triage-env
+docker run --rm -p 7860:7860 email-triage-env
 ```
+
+Current Docker behavior:
+
+- Container starts the FastAPI server (`python -m server.app`)
+- Server binds to port `7860`
+- Required for Hugging Face `/reset` health checks
 
 ### Hugging Face Spaces Deployment
 
 This environment is ready for deployment to Hugging Face Spaces:
 
-1. Create a new Space on Hugging Face with **Docker** SDK
-2. Add the `openenv` tag to your Space
-3. Push this repository to the Space
-4. Set environment variables in the Space settings:
+1. Create a new Space on Hugging Face with **Docker** SDK.
+2. Add the `openenv` tag to your Space.
+3. Push this repository to the Space.
+4. Set environment variables in Space Settings -> Variables/Secrets:
    - `API_BASE_URL` (optional - uses heuristics if not set)
    - `MODEL_NAME` (default: gpt-4o-mini)
    - `HF_TOKEN` (for API access)
+5. Wait for build/startup and verify endpoint:
 
-The Space will automatically run `inference.py` on startup.
+```bash
+curl -X POST https://<your-space>.hf.space/reset -H "Content-Type: application/json" -d '{}'
+```
+
+Expected: HTTP `200`.
+
+6. Run validator before submission:
+
+```bash
+openenv validate
+```
+
+And run the submission script from the requirement guide:
+
+```bash
+./scripts/validate-submission.sh https://<your-space>.hf.space .
+```
+
+The Space now starts the API server on startup, not `inference.py`.
 
 ## How Inference Works
 
@@ -215,32 +269,20 @@ The Space will automatically run `inference.py` on startup.
 - Reads `API_BASE_URL`, `MODEL_NAME`, `HF_TOKEN`
 - Creates OpenAI client if endpoint is configured
 - Runs all 3 tasks sequentially
-- Prints per-step reward breakdown
-- Prints final score and cumulative reward per task
+- Emits strict structured logs:
+  - `[START] ...`
+  - `[STEP] ...`
+  - `[END] ...`
 
 ## Example Output
 
 ### Heuristic Baseline (No API)
 
 ```text
-Email Triage OpenEnv Inference
-API_BASE_URL set: False
-MODEL_NAME: gpt-4o-mini
-HF_TOKEN set: False
-
-=== Running task_easy ===
-Step 01 | email=E001 | reward=+0.30 | cat=+0.30 pri=+0.00 act=+0.00 rep=+0.00 penalties={}
+[START] task_id=task_easy model_name=gpt-4o-mini api_enabled=0 total_steps=30
+[STEP] task_id=task_easy step=01 email_id=E001 reward=0.3000 cumulative_reward=0.3000 category=billing priority=medium action=reply reply_template=general_reply
 ...
-Final score (task_easy): 0.8333
-Cumulative reward (task_easy): 6.5000
-
-=== Running task_medium ===
-...
-Final score (task_medium): 0.7667
-
-=== Running task_hard ===
-...
-Final score (task_hard): 0.7667
+[END] task_id=task_easy steps=30 final_score=0.9333 cumulative_reward=8.0000 avg_reward=0.2667 category_accuracy=0.9333 priority_accuracy=0.3000 action_accuracy=0.5667 reply_accuracy=0.0000
 ```
 
 ### Baseline Scores
