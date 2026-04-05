@@ -44,23 +44,16 @@ The agent is evaluated using a deterministic grading system that produces a norm
 
 ```text
 email-triage-env/
-
 ├── inference.py          # Main entry point for agent evaluation
 ├── openenv.yaml          # OpenEnv specification file
 ├── Dockerfile            # Docker container configuration
 ├── requirements.txt      # Python dependencies
 ├── README.md            # Project documentation
-=======
-├── inference.py
-├── pyproject.toml
-├── uv.lock
-├── openenv.yaml
-├── Dockerfile
-├── README.md
-├── requirements.txt
-├── server/
+├── pyproject.toml       # Python project configuration
+├── uv.lock              # UV lock file
+├── server/              # FastAPI server for HF Spaces
 │   ├── __init__.py
-│   ├── app.py
+│   └── app.py
 ├── src/
 │   ├── env.py           # EmailTriageEnv environment implementation
 │   ├── models.py        # Pydantic models (EmailRecord, Action, Observation, State)
@@ -199,6 +192,25 @@ docker build -t email-triage-env .
 docker run --rm --env-file .env email-triage-env
 ```
 
+### Run the API Server (for HF Spaces)
+
+```bash
+python -m server.app
+```
+
+Or with uvicorn directly:
+
+```bash
+uvicorn server.app:app --host 0.0.0.0 --port 7860
+```
+
+Quick endpoint checks:
+
+```bash
+curl -X POST http://127.0.0.1:7860/reset -H "Content-Type: application/json" -d '{"task_id": "task_easy"}'
+curl http://127.0.0.1:7860/state
+```
+
 ## Environment Variables
 
 Create a `.env` file with the following variables:
@@ -221,16 +233,23 @@ HF_TOKEN=your_token_here
 This project is configured for Hugging Face Spaces deployment:
 
 1. **Space Configuration**: Uses Docker SDK (specified in YAML header)
-2. **Entry Point**: `inference.py` runs automatically on container start
+2. **Entry Point**: The Dockerfile starts the FastAPI server on port 7860
 3. **Environment Variables**: Add `API_BASE_URL`, `MODEL_NAME`, and `HF_TOKEN` in Space Settings > Secrets
-4. **Build Process**: Hugging Face automatically builds the Docker image and runs the environment
+4. **Build Process**: Hugging Face automatically builds the Docker image and runs the server
 
 To deploy:
-1. Create a new Space on Hugging Face
-2. Select "Docker" as the SDK
-3. Push this repository to the Space
+1. Create a new Space on Hugging Face with **Docker** SDK
+2. Add the `openenv` tag to your Space
+3. Push this repository to the Space: `git push hf main`
 4. Add environment variables in Space Settings
-5. The environment will automatically build and run
+5. The Space will automatically build and start the server
+
+Verify the deployment:
+```bash
+curl -X POST https://gotummy-email-triage-openenv.hf.space/reset -H "Content-Type: application/json" -d '{"task_id": "task_easy"}'
+```
+
+Expected: HTTP `200` with observation data.
 
 ## Inference Process
 
@@ -331,134 +350,6 @@ The environment is production-ready and suitable for research, competition, or p
 
 ---
 
-
 **License**: MIT  
 **Author**: OpenEnv Contributors  
-**Repository**: https://huggingface.co/spaces/YOUR_USERNAME/email-triage-env
-=======
-```bash
-pip install -r requirements.txt
-python inference.py
-```
-
-Optional env vars for OpenAI-compatible endpoint:
-
-```bash
-export API_BASE_URL="https://your-openai-compatible-endpoint/v1"
-export MODEL_NAME="gpt-4o-mini"
-export HF_TOKEN="your_token"
-python inference.py
-```
-
-If `API_BASE_URL` is not set, inference uses deterministic local heuristics.
-
-### Run the API Server (app.py)
-
-The OpenEnv validator and Hugging Face Space health checks require a live server that responds to `POST /reset`.
-
-From repo root:
-
-```bash
-python -m server.app
-```
-
-Alternative command from the `server/` directory:
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 7860
-```
-
-Quick endpoint checks:
-
-```bash
-curl -X POST http://127.0.0.1:7860/reset -H "Content-Type: application/json" -d '{}'
-curl http://127.0.0.1:7860/state
-```
-
-### Docker
-
-```bash
-docker build -t email-triage-env .
-docker run --rm \
-  -p 7860:7860 \
-  -e API_BASE_URL="https://your-openai-compatible-endpoint/v1" \
-  -e MODEL_NAME="gpt-4o-mini" \
-  -e HF_TOKEN="your_token" \
-  email-triage-env
-```
-
-It also runs without external endpoint:
-
-```bash
-docker run --rm -p 7860:7860 email-triage-env
-```
-
-Current Docker behavior:
-
-- Container starts the FastAPI server (`python -m server.app`)
-- Server binds to port `7860`
-- Required for Hugging Face `/reset` health checks
-
-### Hugging Face Spaces Deployment
-
-This environment is ready for deployment to Hugging Face Spaces:
-
-1. Create a new Space on Hugging Face with **Docker** SDK.
-2. Add the `openenv` tag to your Space.
-3. Push this repository to the Space.
-4. Set environment variables in Space Settings -> Variables/Secrets:
-   - `API_BASE_URL` (optional - uses heuristics if not set)
-   - `MODEL_NAME` (default: gpt-4o-mini)
-   - `HF_TOKEN` (for API access)
-5. Wait for build/startup and verify endpoint:
-
-```bash
-curl -X POST https://<your-space>.hf.space/reset -H "Content-Type: application/json" -d '{}'
-```
-
-Expected: HTTP `200`.
-
-6. Run validator before submission:
-
-```bash
-openenv validate
-```
-
-And run the submission script from the requirement guide:
-
-```bash
-./scripts/validate-submission.sh https://<your-space>.hf.space .
-```
-
-The Space now starts the API server on startup, not `inference.py`.
-
-## How Inference Works
-
-`inference.py`:
-- Reads `API_BASE_URL`, `MODEL_NAME`, `HF_TOKEN`
-- Creates OpenAI client if endpoint is configured
-- Runs all 3 tasks sequentially
-- Emits strict structured logs:
-  - `[START] ...`
-  - `[STEP] ...`
-  - `[END] ...`
-
-## Example Output
-
-### Heuristic Baseline (No API)
-
-```text
-[START] task_id=task_easy model_name=gpt-4o-mini api_enabled=0 total_steps=30
-[STEP] task_id=task_easy step=01 email_id=E001 reward=0.3000 cumulative_reward=0.3000 category=billing priority=medium action=reply reply_template=general_reply
-...
-[END] task_id=task_easy steps=30 final_score=0.9333 cumulative_reward=8.0000 avg_reward=0.2667 category_accuracy=0.9333 priority_accuracy=0.3000 action_accuracy=0.5667 reply_accuracy=0.0000
-```
-
-### Baseline Scores
-
-| Task | Difficulty | Heuristic Score | Expected LLM Score |
-|------|------------|-----------------|-------------------|
-| task_easy | Easy | 0.8333 | 0.90+ |
-| task_medium | Medium | 0.7667 | 0.85+ |
-| task_hard | Hard | 0.7667 | 0.80+ |
-
+**Repository**: https://huggingface.co/spaces/Gotummy/email-triage-openenv
