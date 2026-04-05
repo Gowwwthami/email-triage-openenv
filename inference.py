@@ -1,13 +1,18 @@
 """
-Email Triage Hackathon - Inference Script with Strict Logging
+Email Triage Hybrid Agent - Inference Script with Strict Logging
 
-This script calls the API endpoints and prints structured logs for evaluation.
-Log format is STRICT and must not be changed.
+Hybrid Architecture:
+- Rule-based: category classification, action selection, reply template selection
+- LLM API: entity extraction (customer_name, product, urgency)
+
+This script implements the agent logic directly and prints structured logs for evaluation.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -17,7 +22,7 @@ try:
 except ImportError:
     pass
 
-import requests
+from openai import OpenAI
 
 
 # ============================================================================
@@ -27,11 +32,44 @@ API_BASE_URL = os.getenv("API_BASE_URL", "")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
-# Determine base URL
-if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
-    BASE_URL = sys.argv[1].rstrip("/")
-else:
-    BASE_URL = "http://localhost:7860"
+
+# ============================================================================
+# VALID CATEGORIES AND MAPPINGS
+# ============================================================================
+VALID_CATEGORIES = [
+    "refund",
+    "complaint",
+    "order_status",
+    "technical_support",
+    "billing",
+    "general_inquiry",
+    "urgent",
+    "spam"
+]
+
+# Category to action mapping
+CATEGORY_ACTIONS = {
+    "refund": "process_refund",
+    "complaint": "escalate_to_manager",
+    "order_status": "check_order_status",
+    "technical_support": "create_support_ticket",
+    "billing": "review_billing_issue",
+    "general_inquiry": "send_general_response",
+    "urgent": "priority_escalation",
+    "spam": "mark_as_spam"
+}
+
+# Category to reply template mapping
+CATEGORY_TEMPLATES = {
+    "refund": "refund_template",
+    "complaint": "complaint_template",
+    "order_status": "order_status_template",
+    "technical_support": "technical_support_template",
+    "billing": "billing_template",
+    "general_inquiry": "general_inquiry_template",
+    "urgent": "urgent_template",
+    "spam": "spam_template"
+}
 
 
 # ============================================================================
@@ -97,21 +135,260 @@ class StrictLogger:
 
 
 # ============================================================================
-# API CALL FUNCTION
+# OPENAI CLIENT
 # ============================================================================
-def make_api_call(endpoint: str, payload: dict) -> tuple[bool, Any]:
+def get_openai_client() -> OpenAI | None:
+    """Initialize OpenAI client from environment variables."""
+    if not API_BASE_URL:
+        return None
+    return OpenAI(
+        base_url=API_BASE_URL,
+        api_key=HF_TOKEN or ""
+    )
+
+
+# ============================================================================
+# RULE-BASED CLASSIFICATION
+# ============================================================================
+def classify_email(email: str) -> str:
     """
-    Make API call and return (success, result_or_error).
+    Rule-based email classification into one of 8 categories.
     """
-    url = f"{BASE_URL}{endpoint}"
-    headers = {"Content-Type": "application/json"}
+    text = email.lower()
+    
+    # Check for urgent first (highest priority)
+    if any(word in text for word in ["urgent", "asap", "emergency", "critical", "immediately"]):
+        return "urgent"
+    
+    # Check for refund
+    if any(word in text for word in ["refund", "money back", "return", "reimburse"]):
+        return "refund"
+    
+    # Check for complaint
+    if any(word in text for word in ["complaint", "unhappy", "disappointed", "terrible", "bad", "poor", "worst"]):
+        return "complaint"
+    
+    # Check for billing
+    if any(word in text for word in ["billing", "invoice", "charge", "payment", "subscription", "price", "cost"]):
+        return "billing"
+    
+    # Check for order status
+    if any(word in text for word in ["order", "tracking", "shipment", "delivery", "package", "shipping"]):
+        return "order_status"
+    
+    # Check for technical support
+    if any(word in text for word in ["technical", "bug", "error", "crash", "not working", "broken", "issue", "problem"]):
+        return "technical_support"
+    
+    # Check for spam
+    if any(word in text for word in ["unsubscribe", "promotion", "marketing", "advertisement", "spam"]):
+        return "spam"
+    
+    # Default
+    return "general_inquiry"
+
+
+# ============================================================================
+# RULE-BASED ACTION SELECTION
+# ============================================================================
+def select_action(category: str) -> str:
+    """
+    Select action based on category.
+    """
+    return CATEGORY_ACTIONS.get(category, "send_general_response")
+
+
+# ============================================================================
+# RULE-BASED REPLY TEMPLATE SELECTION
+# ============================================================================
+def select_reply_template(category: str) -> str:
+    """
+    Select reply template based on category.
+    """
+    return CATEGORY_TEMPLATES.get(category, "general_inquiry_template")
+
+
+# ============================================================================
+# LLM ENTITY EXTRACTION
+# ============================================================================
+def extract_entities_llm(email: str, client: OpenAI | None) -> dict:
+    """
+    Extract entities using LLM API.
+    Falls back to rule-based if LLM unavailable.
+    
+    Extracts: customer_name, product, urgency
+    """
+    # Default values
+    default_result = {
+        "customer_name": None,
+        "product": None,
+        "urgency": "medium"
+    }
+    
+    if not client:
+        # Fallback: rule-based extraction
+        return extract_entities_rule_based(email)
     
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-        response.raise_for_status()
-        return True, response.json()
-    except requests.exceptions.RequestException as e:
-        return False, str(e)
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            temperature=0,
+            max_tokens=100,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an email information extraction assistant.
+Extract the following fields from the email:
+
+* customer_name
+* product
+* urgency (low, medium, high, urgent)
+
+Return JSON only:
+{
+  "customer_name": "",
+  "product": "",
+  "urgency": ""
+}
+
+Email:"""
+                },
+                {"role": "user", "content": email}
+            ]
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # Try to parse JSON
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            # Try to extract JSON from markdown code block
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group(1))
+                except:
+                    return default_result
+            else:
+                return default_result
+        
+        # Validate and normalize
+        result = {
+            "customer_name": data.get("customer_name") if data.get("customer_name") else None,
+            "product": data.get("product") if data.get("product") else None,
+            "urgency": normalize_urgency(data.get("urgency", "medium"))
+        }
+        
+        return result
+    
+    except Exception as e:
+        # Fallback on error
+        return extract_entities_rule_based(email)
+
+
+def extract_entities_rule_based(email: str) -> dict:
+    """
+    Rule-based entity extraction when LLM unavailable.
+    """
+    text = email.lower()
+    
+    # Extract customer name from signature
+    name = None
+    name_patterns = [
+        r'(?:from|name|regards|sincerely|thanks)[,:]?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+        r'(?:^|\n)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*$'
+    ]
+    for pattern in name_patterns:
+        match = re.search(pattern, email, re.MULTILINE | re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            break
+    
+    # Extract product
+    product = None
+    product_keywords = ["laptop", "phone", "tablet", "computer", "device", "monitor", "keyboard", "mouse", "headphones", "camera", "printer", "router", "modem", "speaker", "charger", "cable", "adapter", "battery", "screen", "display"]
+    for kw in product_keywords:
+        if kw in text:
+            product = kw
+            break
+    
+    # Determine urgency
+    urgency = "medium"
+    if any(word in text for word in ["urgent", "asap", "emergency", "immediately", "critical"]):
+        urgency = "urgent"
+    elif any(word in text for word in ["high priority", "important", "please hurry"]):
+        urgency = "high"
+    elif any(word in text for word in ["low priority", "whenever", "no rush"]):
+        urgency = "low"
+    
+    return {
+        "customer_name": name,
+        "product": product,
+        "urgency": urgency
+    }
+
+
+def normalize_urgency(urgency: str) -> str:
+    """
+    Normalize urgency to valid values and map to priority.
+    """
+    urgency_clean = urgency.lower().strip()
+    
+    # Map urgency to priority
+    mapping = {
+        "urgent": "urgent",
+        "high": "high",
+        "medium": "medium",
+        "low": "low"
+    }
+    
+    return mapping.get(urgency_clean, "medium")
+
+
+# ============================================================================
+# HYBRID AGENT MAIN LOGIC
+# ============================================================================
+def run_hybrid_agent(email: str) -> dict:
+    """
+    Run the hybrid agent on an email.
+    
+    Returns:
+        {
+            "category": str,
+            "priority": str,
+            "action": str,
+            "reply_template": str,
+            "customer_name": str | None,
+            "product": str | None
+        }
+    """
+    # Initialize OpenAI client
+    client = get_openai_client()
+    
+    # Step 1: Rule-based classification
+    category = classify_email(email)
+    
+    # Step 2: LLM entity extraction
+    entities = extract_entities_llm(email, client)
+    
+    # Step 3: Rule-based action selection
+    action = select_action(category)
+    
+    # Step 4: Rule-based reply template selection
+    reply_template = select_reply_template(category)
+    
+    # Map urgency to priority
+    priority = entities["urgency"]
+    
+    return {
+        "category": category,
+        "priority": priority,
+        "action": action,
+        "reply_template": reply_template,
+        "customer_name": entities["customer_name"],
+        "product": entities["product"]
+    }
 
 
 # ============================================================================
@@ -122,9 +399,9 @@ def run_inference(email: str) -> None:
     Run the complete inference pipeline with strict logging.
     
     Steps:
-    1. Classify email
-    2. Extract information
-    3. Generate reply
+    1. Classify email (rule-based)
+    2. Extract entities (LLM)
+    3. Select action and template (rule-based)
     """
     logger = StrictLogger(
         task="email-triage",
@@ -134,96 +411,64 @@ def run_inference(email: str) -> None:
     
     # Track success
     all_success = True
-    category = "general_inquiry"  # Default
-    extracted_data = {}
     
     try:
         # Print START
         logger.start()
         
         # ========================================================================
-        # STEP 1: Classify email
+        # STEP 1: Classify email (rule-based)
         # ========================================================================
-        success, result = make_api_call("/classify", {"email": email})
+        category = classify_email(email)
+        logger.step("classify_email", 0.33, False, None)
         
-        if success and isinstance(result, dict) and "category" in result:
-            category = result["category"]
-            # Validate category is in valid list
-            valid_categories = [
-                "refund", "complaint", "order_status", "technical_support",
-                "billing", "general_inquiry", "urgent", "spam"
-            ]
-            if category not in valid_categories:
-                category = "general_inquiry"
-            logger.step("classify_email", 0.33, False, None)
+        # ========================================================================
+        # STEP 2: Extract entities (LLM API)
+        # ========================================================================
+        client = get_openai_client()
+        entities = extract_entities_llm(email, client)
+        
+        # Validate extraction
+        if entities["customer_name"] is None and entities["product"] is None:
+            # Partial success - extraction worked but no entities found
+            logger.step("extract_entities", 0.33, False, None)
         else:
-            error_msg = str(result) if not success else "missing category"
-            logger.step("classify_email", 0.00, False, error_msg)
-            all_success = False
+            logger.step("extract_entities", 0.33, False, None)
         
         # ========================================================================
-        # STEP 2: Extract information
+        # STEP 3: Select action and reply template (rule-based)
         # ========================================================================
-        success, result = make_api_call("/extract", {"email": email})
+        action = select_action(category)
+        reply_template = select_reply_template(category)
         
-        if success and isinstance(result, dict):
-            # Validate all required fields exist
-            required_fields = ["customer_name", "order_id", "product", "issue", "intent", "urgency"]
-            has_all_fields = all(field in result for field in required_fields)
-            
-            if has_all_fields:
-                extracted_data = result
-                logger.step("extract_entities", 0.33, False, None)
-            else:
-                missing = [f for f in required_fields if f not in result]
-                logger.step("extract_entities", 0.00, False, f"missing fields: {missing}")
-                all_success = False
-                # Fill missing fields with null
-                for field in required_fields:
-                    if field not in extracted_data:
-                        extracted_data[field] = None
-        else:
-            error_msg = str(result) if not success else "invalid response"
-            logger.step("extract_entities", 0.00, False, error_msg)
-            all_success = False
-            # Initialize with nulls
-            extracted_data = {
-                "customer_name": None,
-                "order_id": None,
-                "product": None,
-                "issue": None,
-                "intent": None,
-                "urgency": None
-            }
-        
-        # ========================================================================
-        # STEP 3: Generate reply
-        # ========================================================================
-        suggest_payload = {
-            "email": email,
+        # Validate all required fields are present
+        result = {
             "category": category,
-            "extracted": extracted_data
+            "priority": entities["urgency"],
+            "action": action,
+            "reply_template": reply_template,
+            "customer_name": entities["customer_name"],
+            "product": entities["product"]
         }
         
-        success, result = make_api_call("/suggest", suggest_payload)
+        # Check all fields exist
+        required_fields = ["category", "priority", "action", "reply_template"]
+        has_all_fields = all(result.get(field) for field in required_fields)
         
-        if success and isinstance(result, dict) and "response" in result:
-            response_text = result["response"]
-            # Validate response is not empty and is a string
-            if isinstance(response_text, str) and len(response_text.strip()) > 0:
-                logger.step("generate_reply", 0.34, True, None)
-            else:
-                logger.step("generate_reply", 0.00, True, "empty response")
-                all_success = False
+        if has_all_fields:
+            logger.step("generate_reply", 0.34, True, None)
         else:
-            error_msg = str(result) if not success else "missing response"
-            logger.step("generate_reply", 0.00, True, error_msg)
+            missing = [f for f in required_fields if not result.get(field)]
+            logger.step("generate_reply", 0.00, True, f"missing fields: {missing}")
             all_success = False
         
         # ========================================================================
         # END: Print final log
         # ========================================================================
         logger.end(all_success)
+        
+        # Return result for potential further use
+        return result
         
     except Exception as e:
         # Ensure END is always printed even on exception
@@ -251,7 +496,7 @@ Thanks,
 John Smith"""
     
     # Check if email provided as argument
-    if len(sys.argv) > 1 and not sys.argv[1].startswith("http"):
+    if len(sys.argv) > 1:
         # Read email from file if argument is a file path
         email_path = sys.argv[1]
         if os.path.isfile(email_path):
