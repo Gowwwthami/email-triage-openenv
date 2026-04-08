@@ -1,3 +1,12 @@
+---
+title: Email Triage OpenEnv
+emoji: 📧
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # Email Triage Environment
 
 ## Problem
@@ -75,7 +84,7 @@ This executes easy, medium, and hard, printing START/STEP/END logs and one final
 Run the API server:
 
 ```bash
-python -m server.app
+python app.py
 ```
 
 Default bind:

@@ -13,6 +13,7 @@ except ImportError:
 from openai import OpenAI
 
 from src.env import EmailTriageEnv
+from src.graders import clamp_score, safe_score
 from src.models import Action
 from src.score_utils import clamp_score, safe_ratio_score
 
@@ -366,7 +367,8 @@ def load_local_env(env_path: str = ".env") -> None:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
+            existing = os.environ.get(key)
+            if key and (existing is None or not existing.strip()):
                 os.environ[key] = value
 
 
@@ -434,12 +436,7 @@ class HybridEmailAgent:
     def _should_use_llm(self, task_id: str) -> bool:
         if self.client is None:
             return False
-        mode = (os.getenv("LLM_TASK_MODE") or "hard").strip().lower()
-        if mode == "all":
-            return True
-        if mode == "hard":
-            return task_id == "task_hard"
-        return False
+        return task_id == "task_hard"
 
     def _normalize_llm_payload(self, raw: Dict[str, str], fallback: Dict[str, str]) -> Dict[str, str]:
         allowed_categories = {"billing", "technical", "sales", "account", "complaint", "shipping", "other"}
@@ -577,7 +574,7 @@ def make_client() -> OpenAI | None:
 
 
 def _new_component_metric() -> Dict[str, float]:
-    return {"correct": 0, "total": 0, "accuracy": 0.0}
+    return {"correct": 0, "total": 0, "accuracy": 0.01}
 
 
 def _safe_accuracy(correct: int, total: int) -> float:
@@ -667,8 +664,8 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
             correct = int(component_accuracy[key]["correct"])
             total = int(component_accuracy[key]["total"])
             accuracy = _safe_accuracy(correct=correct, total=total)
-            component_accuracy[key]["accuracy"] = accuracy
-            metric_report[key] = float(accuracy)
+            component_accuracy[key]["accuracy"] = clamp_score(accuracy)
+            metric_report[key] = float(clamp_score(accuracy))
 
     final_score = clamp_score(env.final_score())
     cumulative_reward = env.state().cumulative_reward
@@ -721,6 +718,7 @@ def main() -> None:
         if task_results
         else 0.01
     )
+    mean_final_score = clamp_score(mean_final_score)
     score_parts = " ".join(
         f"{str(result['task_id'])}={float(result['final_score']):.4f}"
         for result in task_results
