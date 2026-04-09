@@ -14,8 +14,7 @@ from openai import OpenAI
 
 from src.env import EmailTriageEnv
 from src.models import Action
-from src.score_utils import SAFE_SCORE, clamp_score, safe_ratio_score
-from src.graders import safe_score
+from src.score_utils import SAFE_SCORE, safe_ratio_score
 
 
 def _fmt_bool(value: bool) -> str:
@@ -667,6 +666,19 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
             component_accuracy[key]["accuracy"] = SAFE_SCORE(accuracy)
             metric_report[key] = float(SAFE_SCORE(accuracy))
 
+    category_accuracy = metric_report["category"]
+    priority_accuracy = metric_report["priority"]
+    action_accuracy = metric_report["action"]
+    reply_accuracy = metric_report["reply"]
+    if category_accuracy is not None:
+        category_accuracy = SAFE_SCORE(category_accuracy)
+    if priority_accuracy is not None:
+        priority_accuracy = SAFE_SCORE(priority_accuracy)
+    if action_accuracy is not None:
+        action_accuracy = SAFE_SCORE(action_accuracy)
+    if reply_accuracy is not None:
+        reply_accuracy = SAFE_SCORE(reply_accuracy)
+
     final_score = SAFE_SCORE(env.final_score())
     cumulative_reward = env.state().cumulative_reward
     avg_reward = cumulative_reward / max(step_count, 1)
@@ -679,10 +691,10 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
         steps=step_count,
         final_score=final_score,
         avg_reward=avg_reward,
-        category_accuracy=metric_report["category"],
-        priority_accuracy=metric_report["priority"],
-        action_accuracy=metric_report["action"],
-        reply_accuracy=metric_report["reply"],
+        category_accuracy=category_accuracy,
+        priority_accuracy=priority_accuracy,
+        action_accuracy=action_accuracy,
+        reply_accuracy=reply_accuracy,
     )
 
     return {

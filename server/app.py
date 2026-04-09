@@ -20,9 +20,8 @@ except ImportError:
     pass
 
 from src.env import EmailTriageEnv, OpenEnvEmailTriageEnv
-from src.graders import clamp_score
 from src.models import Action
-from src.score_utils import SAFE_SCORE, clamp_score
+    from src.score_utils import SAFE_SCORE
 
 
 ALLOWED_CATEGORIES = {"billing", "technical", "sales", "account", "complaint", "shipping", "other"}
