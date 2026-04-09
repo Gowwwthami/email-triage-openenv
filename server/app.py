@@ -22,7 +22,7 @@ except ImportError:
 from src.env import EmailTriageEnv, OpenEnvEmailTriageEnv
 from src.graders import clamp_score
 from src.models import Action
-from src.score_utils import clamp_score
+from src.score_utils import SAFE_SCORE, clamp_score
 
 
 ALLOWED_CATEGORIES = {"billing", "technical", "sales", "account", "complaint", "shipping", "other"}
@@ -507,7 +507,7 @@ def _fallback_one_line_reply(email: str, subject: str) -> str:
 
 def _reply_quality_component(reply: str, email: str, subject: str) -> float:
     if not reply:
-        return clamp_score(0.01)
+        return SAFE_SCORE(0.01)
 
     combined = f"{subject} {email}".lower()
     reply_lower = reply.lower()
@@ -515,7 +515,7 @@ def _reply_quality_component(reply: str, email: str, subject: str) -> float:
     email_tokens = re.findall(r"[a-z0-9']+", combined)
     reply_tokens = re.findall(r"[a-z0-9']+", reply_lower)
     if not reply_tokens:
-        return clamp_score(0.01)
+        return SAFE_SCORE(0.01)
 
     overlap = sum((Counter(reply_tokens) & Counter(email_tokens)).values())
     overlap_ratio = overlap / max(1, len(set(email_tokens)))
@@ -529,7 +529,7 @@ def _reply_quality_component(reply: str, email: str, subject: str) -> float:
     length_score = min(1.0, len(reply_tokens) / 16.0)
     raw = 0.45 * min(1.0, overlap_ratio * 5.0) + 0.35 * politeness + 0.20 * length_score
     score = round(max(0.0, min(0.3, raw * 0.3)), 4)
-    return clamp_score(score)
+    return SAFE_SCORE(score)
 
 
 def _run_full_task(task_id: str) -> Dict[str, Any]:
@@ -568,11 +568,11 @@ def _run_full_task(task_id: str) -> Dict[str, Any]:
         steps += 1
 
     state = env.state()
-    final_score = round(clamp_score(float(env.final_score())), 2)
+    final_score = round(SAFE_SCORE(float(env.final_score())), 2)
     if task_id == "task_hard" and steps > 0:
-        final_score = round(clamp_score(hard_custom_total / steps), 2)
+        final_score = round(SAFE_SCORE(hard_custom_total / steps), 2)
     elif task_id == "task_hard":
-        final_score = 0.01
+        final_score = round(SAFE_SCORE(0.01), 2)
 
     return {
         "score": final_score,
@@ -585,10 +585,10 @@ def _run_full_task(task_id: str) -> Dict[str, Any]:
 
 def _scoreboard_overall() -> float:
     if not _scoreboard:
-        return clamp_score(0.01)
+        return SAFE_SCORE(0.01)
     total = sum(float(task_data["score"]) for task_data in _scoreboard.values())
     score = round(total / len(_scoreboard), 2)
-    return clamp_score(score)
+    return SAFE_SCORE(score)
 
 
 def _total_email_count() -> int:

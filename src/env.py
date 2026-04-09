@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from src.dataset import load_synthetic_email_dataset
 from src.graders import DeterministicTriageGrader
-from src.graders import clamp_score
+from src.score_utils import SAFE_SCORE
 from src.models import Action, Observation, State
 from src.rewards import compute_step_reward
 from src.tasks import TaskConfig, get_task_config
@@ -109,7 +109,7 @@ class EmailTriageEnv:
         return next_observation, reward_obj.total, self.done, info
 
     def final_score(self) -> float:
-        return clamp_score(self.grader.score())
+        return SAFE_SCORE(self.grader.score())
 
     def _observation_for_index(self, index: int) -> Observation:
         email = self.dataset[index]

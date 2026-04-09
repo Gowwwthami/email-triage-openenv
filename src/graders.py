@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from src.models import Action, EmailRecord
-from src.score_utils import clamp_score, safe_ratio_score
+from src.score_utils import SAFE_SCORE, safe_ratio_score
 from src.tasks import TaskConfig
 
 
 def safe_score(correct: int, total: int) -> float:
-    return safe_ratio_score(correct=correct, total=total)
+    return SAFE_SCORE(safe_ratio_score(correct=correct, total=total))
 
 
 class DeterministicTriageGrader:
@@ -37,4 +37,4 @@ class DeterministicTriageGrader:
                 self.correct += 1
 
     def score(self) -> float:
-        return clamp_score(safe_ratio_score(correct=self.correct, total=self.total))
+        return SAFE_SCORE(safe_ratio_score(correct=self.correct, total=self.total))

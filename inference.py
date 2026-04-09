@@ -13,9 +13,9 @@ except ImportError:
 from openai import OpenAI
 
 from src.env import EmailTriageEnv
-from src.graders import clamp_score, safe_score
 from src.models import Action
-from src.score_utils import clamp_score, safe_ratio_score
+from src.score_utils import SAFE_SCORE, clamp_score, safe_ratio_score
+from src.graders import safe_score
 
 
 def _fmt_bool(value: bool) -> str:
@@ -578,7 +578,7 @@ def _new_component_metric() -> Dict[str, float]:
 
 
 def _safe_accuracy(correct: int, total: int) -> float:
-    return safe_ratio_score(correct=correct, total=total)
+    return SAFE_SCORE(safe_ratio_score(correct=correct, total=total))
 
 
 def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, object]:
@@ -664,10 +664,10 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
             correct = int(component_accuracy[key]["correct"])
             total = int(component_accuracy[key]["total"])
             accuracy = _safe_accuracy(correct=correct, total=total)
-            component_accuracy[key]["accuracy"] = clamp_score(accuracy)
-            metric_report[key] = float(clamp_score(accuracy))
+            component_accuracy[key]["accuracy"] = SAFE_SCORE(accuracy)
+            metric_report[key] = float(SAFE_SCORE(accuracy))
 
-    final_score = clamp_score(env.final_score())
+    final_score = SAFE_SCORE(env.final_score())
     cumulative_reward = env.state().cumulative_reward
     avg_reward = cumulative_reward / max(step_count, 1)
     
@@ -714,11 +714,11 @@ def main() -> None:
 
     total_steps = sum(int(result["steps"]) for result in task_results)
     mean_final_score = (
-        clamp_score(sum(float(result["final_score"]) for result in task_results) / len(task_results))
+        SAFE_SCORE(sum(float(result["final_score"]) for result in task_results) / len(task_results))
         if task_results
-        else 0.01
+        else SAFE_SCORE(0.01)
     )
-    mean_final_score = clamp_score(mean_final_score)
+    mean_final_score = SAFE_SCORE(mean_final_score)
     score_parts = " ".join(
         f"{str(result['task_id'])}={float(result['final_score']):.4f}"
         for result in task_results
