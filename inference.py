@@ -76,6 +76,7 @@ def _emit_step(
     reply_template: str | None,
 ) -> None:
     reward_display = _display_score(reward)
+    cumulative_reward_display = _display_score(cumulative_reward)
     line = (
         "[STEP]"
         f" task_id={task_id}"
@@ -83,7 +84,7 @@ def _emit_step(
         f" email_id={email_id}"
         f" email=\"{email}\""
         f" reward={reward_display:.2f}"
-        f" cumulative_reward={cumulative_reward:.2f}"
+        f" cumulative_reward={cumulative_reward_display:.2f}"
         f" category={category}"
     )
 
@@ -631,7 +632,7 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
         action = Action.model_validate(action_payload)
         obs, reward, done, info = env.step(action)
         step_rewards.append(reward)
-        cumulative_rewards.append(env.state().cumulative_reward)
+        cumulative_rewards.append(_display_score(env.state().cumulative_reward))
 
         truth = info["truth"]
         category_correct = action.category is not None and action.category.value == truth["category"]
