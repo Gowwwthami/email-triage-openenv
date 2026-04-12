@@ -730,12 +730,10 @@ def main() -> None:
     else:
         mean_final_score = 0.01
 
-    # apply safe clamp
     mean_final_score = SAFE_SCORE(mean_final_score)
 
-    # extra safety to avoid high-boundary rounding
-    if mean_final_score > 0.95:
-        mean_final_score = 0.94
+    if mean_final_score > 0.90:
+        mean_final_score = 0.89
     score_parts = " ".join(
         f"{str(result['task_id'])}={float(result['final_score']):.4f}"
         for result in task_results
