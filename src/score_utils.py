@@ -2,24 +2,18 @@ from __future__ import annotations
 
 
 def SAFE_SCORE(score: float) -> float:
-    EPS = 1e-4
-
     try:
         score = float(score)
     except:
-        return 0.5
+        return 0.01
 
     if score <= 0:
-        return 0.01 + EPS
+        return 0.01
 
     if score >= 1:
-        return 0.99 - EPS
+        return 0.99
 
-    # eliminate floating precision edge (like 0.9)
-    if abs(score - 0.9) < 1e-6:
-        return 0.899
-
-    return max(0.01 + EPS, min(0.99 - EPS, score))
+    return score
 
 
 def clamp_score(score: float) -> float:
