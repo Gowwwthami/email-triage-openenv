@@ -76,8 +76,8 @@ def _emit_step(
         f" step={step:02d}"
         f" email_id={email_id}"
         f" email=\"{email}\""
-        f" reward={reward:.4f}"
-        f" cumulative_reward={cumulative_reward:.4f}"
+        f" reward={reward:.2f}"
+        f" cumulative_reward={cumulative_reward:.2f}"
         f" category={category}"
     )
 
@@ -104,18 +104,18 @@ def _emit_end(
         "[END]"
         f" task_id={task_id}"
         f" steps={steps}"
-        f" final_score={final_score:.4f}"
-        f" avg_reward={avg_reward:.4f}"
+        f" final_score={final_score:.2f}"
+        f" avg_reward={avg_reward:.2f}"
     )
 
     if category_accuracy is not None:
-        line += f" category_accuracy={category_accuracy:.4f}"
+        line += f" category_accuracy={category_accuracy:.2f}"
     if task_id in {"task_medium", "task_hard"} and priority_accuracy is not None:
-        line += f" priority_accuracy={priority_accuracy:.4f}"
+        line += f" priority_accuracy={priority_accuracy:.2f}"
     if task_id == "task_hard" and action_accuracy is not None:
-        line += f" action_accuracy={action_accuracy:.4f}"
+        line += f" action_accuracy={action_accuracy:.2f}"
     if task_id == "task_hard" and reply_accuracy is not None:
-        line += f" reply_accuracy={reply_accuracy:.4f}"
+        line += f" reply_accuracy={reply_accuracy:.2f}"
 
     print(line)
 
@@ -735,7 +735,7 @@ def main() -> None:
     if mean_final_score > 0.90:
         mean_final_score = 0.89
     score_parts = " ".join(
-        f"{str(result['task_id'])}={float(result['final_score']):.4f}"
+        f"{str(result['task_id'])}={float(result['final_score']):.2f}"
         for result in task_results
     )
     print()
@@ -743,7 +743,7 @@ def main() -> None:
         "[SUMMARY]"
         f" tasks_run={len(task_results)}"
         f" total_steps={total_steps}"
-        f" mean_final_score={mean_final_score:.4f}"
+        f" mean_final_score={mean_final_score:.2f}"
         f" {score_parts}"
     )
 
