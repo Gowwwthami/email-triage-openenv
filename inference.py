@@ -680,6 +680,8 @@ def run_task(task_id: str, client: OpenAI | None, model_name: str) -> Dict[str, 
         reply_accuracy = SAFE_SCORE(reply_accuracy)
 
     final_score = SAFE_SCORE(env.final_score())
+    if final_score >= 0.90:
+        final_score = 0.89
     cumulative_reward = env.state().cumulative_reward
     avg_reward = cumulative_reward / max(step_count, 1)
     
@@ -732,7 +734,7 @@ def main() -> None:
 
     mean_final_score = SAFE_SCORE(mean_final_score)
 
-    if mean_final_score > 0.90:
+    if mean_final_score >= 0.90:
         mean_final_score = 0.89
     score_parts = " ".join(
         f"{str(result['task_id'])}={float(result['final_score']):.4f}"

@@ -572,6 +572,8 @@ def _run_full_task(task_id: str) -> Dict[str, Any]:
         final_score = round(SAFE_SCORE(hard_custom_total / steps), 2)
     elif task_id == "task_hard":
         final_score = round(SAFE_SCORE(0.01), 2)
+    if final_score >= 0.90:
+        final_score = 0.89
 
     return {
         "score": final_score,
@@ -587,7 +589,10 @@ def _scoreboard_overall() -> float:
         return SAFE_SCORE(0.01)
     total = sum(float(task_data["score"]) for task_data in _scoreboard.values())
     score = round(total / len(_scoreboard), 2)
-    return SAFE_SCORE(score)
+    score = SAFE_SCORE(score)
+    if score >= 0.90:
+        score = 0.89
+    return score
 
 
 def _total_email_count() -> int:

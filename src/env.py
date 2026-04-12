@@ -11,6 +11,20 @@ from src.rewards import compute_step_reward
 from src.tasks import TaskConfig, get_task_config
 
 
+def SAFE_REWARD(r: float) -> float:
+    try:
+        r = float(r)
+    except:
+        return 0.01
+
+    if r <= 0:
+        return 0.01
+    if r >= 1:
+        return 0.99
+
+    return r
+
+
 class EmailTriageEnv:
     def __init__(self, task_id: str) -> None:
         self.task: TaskConfig = get_task_config(task_id)
@@ -63,7 +77,8 @@ class EmailTriageEnv:
 
         current_email = self.dataset[self.index]
         reward_obj = compute_step_reward(action=action, truth=current_email, task=self.task)
-        reward = reward_obj.total if reward_obj.total > 0 else 0.01
+        reward = reward_obj.total
+        reward = SAFE_REWARD(reward)
         self.grader.update(action=action, truth=current_email)
 
         # Update tracking statistics
@@ -144,6 +159,7 @@ class OpenEnvEmailTriageEnv:
         expected_action = self._expected_action_for_email(current_email)
         correct = predicted_action == expected_action
         reward = 1.0 if correct else 0.01
+        reward = SAFE_REWARD(reward)
 
         self.current_index += 1
         self.done = self.current_index >= len(self.emails)
